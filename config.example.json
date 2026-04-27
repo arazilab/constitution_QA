@@ -1,4 +1,12 @@
 {
+  "app": {
+    "server_name": "127.0.0.1",
+    "server_port": null,
+    "share": false
+  },
+  "ngrok": {
+    "auth_token": ""
+  },
   "settings": {
     "credentials": {
       "openai_api_key": "sk-your-openai-api-key-here"

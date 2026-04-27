@@ -159,7 +159,14 @@ def ensure_constitutional_ai_kit() -> None:
     if not KIT_PATH.exists():
         subprocess.run(["git", "clone", "--depth", "1", KIT_REPO_URL, str(KIT_PATH)], check=True)
     else:
-        subprocess.run(["git", "-C", str(KIT_PATH), "pull", "--ff-only"], check=True)
+        pull = subprocess.run(
+            ["git", "-C", str(KIT_PATH), "pull", "--ff-only"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if pull.returncode != 0:
+            print("Warning: could not update .deps/constitutional-ai-kit; using the existing local copy.", file=sys.stderr)
 
     src_path = str(KIT_SRC_PATH)
     if src_path not in sys.path:
@@ -268,6 +275,11 @@ def _merge_nested(base: dict[str, Any], override: dict[str, Any]) -> dict[str, A
 def _default_config_payload() -> dict[str, Any]:
     """Build the default runtime config used when `config.json` is absent."""
     return {
+        "app": {
+            "server_name": "127.0.0.1",
+            "server_port": None,
+            "share": False,
+        },
         "rules": _read_rules(),
         "settings": {
             "credentials": {"openai_api_key": _read_openai_api_key()},
@@ -426,6 +438,25 @@ def build_config() -> AppConfig:
     """Return the effective constitutional AI configuration for a run."""
     payload = _merge_nested(_default_config_payload(), _local_config_payload())
     return AppConfig.from_mapping(payload)
+
+
+def build_launch_settings() -> dict[str, Any]:
+    """Return Gradio launch settings from config and environment overrides."""
+    payload = _merge_nested(_default_config_payload(), _local_config_payload())
+    app_config = payload.get("app", {})
+    if not isinstance(app_config, dict):
+        app_config = {}
+
+    configured_port = os.getenv("GRADIO_SERVER_PORT")
+    config_port = app_config.get("server_port")
+    port = int(configured_port) if configured_port else int(config_port) if config_port else None
+    configured_share = os.getenv("GRADIO_SHARE")
+    share = configured_share.strip().lower() in {"1", "true", "yes", "on"} if configured_share is not None else bool(app_config.get("share", False))
+    return {
+        "server_name": str(app_config.get("server_name") or "127.0.0.1"),
+        "server_port": port,
+        "share": share,
+    }
 
 
 def _stage_label(event: TurnEvent) -> str:
@@ -755,6 +786,5 @@ def build_app() -> gr.Blocks:
 
 
 if __name__ == "__main__":
-    configured_port = os.getenv("GRADIO_SERVER_PORT")
-    port = int(configured_port) if configured_port else None
-    build_app().queue().launch(css=APP_CSS, server_name="127.0.0.1", server_port=port)
+    launch_settings = build_launch_settings()
+    build_app().queue().launch(css=APP_CSS, **launch_settings)

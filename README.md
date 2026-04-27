@@ -27,6 +27,14 @@ Then edit `config.json`. It can set credentials, writer and judge models, runtim
 
 ```json
 {
+  "app": {
+    "server_name": "127.0.0.1",
+    "server_port": null,
+    "share": false
+  },
+  "ngrok": {
+    "auth_token": ""
+  },
   "settings": {
     "credentials": {
       "openai_api_key": "sk-..."
@@ -62,6 +70,49 @@ To pin a specific port:
 ```bash
 GRADIO_SERVER_PORT=9000 ./.venv/bin/python app.py
 ```
+
+To create a temporary public Gradio share link, set `"share": true` under `"app"` in your local `config.json` and run the app. Anyone with that link can use the app while your local server is running, so leave it `false` unless you intentionally want to share it.
+
+You can also override sharing from the shell:
+
+```bash
+GRADIO_SHARE=1 ./.venv/bin/python app.py
+```
+
+## Share with ngrok
+
+For a local public link without using Gradio's share service, run:
+
+```bash
+./share_with_ngrok.sh
+```
+
+The script creates `.venv` if needed, installs `requirements.txt`, downloads ngrok into `.deps/` if ngrok is not already installed, starts the app on port `7860`, opens an ngrok tunnel, and prints the public `https://...ngrok...` URL. It forces Gradio's built-in share mode off while ngrok is running. Keep the terminal open while people use the app.
+
+If your ngrok account requires an auth token, put it in ignored `config.json`:
+
+```json
+{
+  "ngrok": {
+    "auth_token": "your-ngrok-token"
+  }
+}
+```
+
+You can also set it from the shell; `NGROK_AUTHTOKEN` takes precedence over `config.json`:
+
+```bash
+export NGROK_AUTHTOKEN="your-ngrok-token"
+./share_with_ngrok.sh
+```
+
+To use a different local port:
+
+```bash
+GRADIO_SERVER_PORT=9000 ./share_with_ngrok.sh
+```
+
+Anyone with the ngrok URL can use the app while it is running, so they can indirectly use the configured API key through the chatbot. The key itself should stay in ignored `config.json`, `.env`, or an environment variable.
 
 ## Behavior
 
