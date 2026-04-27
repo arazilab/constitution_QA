@@ -1,3 +1,5 @@
+"""Gradio QA app for testing a constitutional AI chatbot against a survey."""
+
 from __future__ import annotations
 
 import json
@@ -6,11 +8,9 @@ import queue
 import re
 import subprocess
 import sys
-import tempfile
 import threading
-from html import escape
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -153,6 +153,7 @@ SAFETY_RATING_OPTIONS = [
 
 
 def ensure_constitutional_ai_kit() -> None:
+    """Clone or update the local constitutional-ai-kit dependency."""
     KIT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     if not KIT_PATH.exists():
@@ -174,6 +175,8 @@ from constitutional_ai.models import ChatMessage, TurnEvent  # noqa: E402
 
 @dataclass
 class SurveyField:
+    """One answer field parsed from the markdown survey."""
+
     key: str
     label: str
     kind: str
@@ -184,6 +187,8 @@ class SurveyField:
 
 @dataclass
 class SurveyItem:
+    """One survey question and its fields parsed from `survey.md`."""
+
     item_id: str
     title: str
     field_type: str = ""
@@ -194,17 +199,20 @@ class SurveyItem:
 
 
 def _slugify(text: str) -> str:
+    """Convert survey labels into stable field-key fragments."""
     text = text.lower().strip()
     text = re.sub(r"[^a-z0-9]+", "_", text)
     return text.strip("_") or "field"
 
 
 def _read_rules() -> list[str]:
+    """Load non-empty constitution rules from the local text file."""
     text = CONSTITUTION_PATH.read_text(encoding="utf-8")
     return [line.strip() for line in text.splitlines() if line.strip() and set(line.strip()) != {"-"}]
 
 
 def _read_openai_api_key() -> str:
+    """Read the OpenAI API key from config, nested config, or environment."""
     if CONFIG_PATH.exists():
         try:
             payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
@@ -230,6 +238,7 @@ def _read_openai_api_key() -> str:
 
 
 def _read_config_payload() -> dict[str, Any]:
+    """Read the optional local config file as a JSON object."""
     if not CONFIG_PATH.exists():
         return {}
 
@@ -245,6 +254,7 @@ def _read_config_payload() -> dict[str, Any]:
 
 
 def _merge_nested(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge local config values over built-in defaults."""
     merged = dict(base)
     for key, value in override.items():
         existing = merged.get(key)
@@ -256,6 +266,7 @@ def _merge_nested(base: dict[str, Any], override: dict[str, Any]) -> dict[str, A
 
 
 def _default_config_payload() -> dict[str, Any]:
+    """Build the default runtime config used when `config.json` is absent."""
     return {
         "rules": _read_rules(),
         "settings": {
@@ -277,6 +288,7 @@ def _default_config_payload() -> dict[str, Any]:
 
 
 def _local_config_payload() -> dict[str, Any]:
+    """Load local config and migrate the legacy top-level API key shape."""
     payload = _read_config_payload()
     legacy_key = str(payload.pop("openai_api_key", "") or "").strip()
     if legacy_key:
@@ -289,16 +301,19 @@ def _local_config_payload() -> dict[str, Any]:
 
 
 def _extract_block(text: str, label: str) -> str:
+    """Extract a labeled markdown block from one survey item."""
     pattern = rf"\*\*{re.escape(label)}\*\*\s*\n(?P<body>.*?)(?=\n\*\*|\n---|\Z)"
     match = re.search(pattern, text, re.DOTALL)
     return match.group("body").strip() if match else ""
 
 
 def _extract_options(block: str) -> list[str]:
+    """Extract checkbox-style options from a survey markdown block."""
     return [match.group(1).strip() for match in re.finditer(r"^- \[[ xX]?\]\s+(.+)$", block, re.MULTILINE)]
 
 
 def _clean_question(text: str) -> str:
+    """Normalize a survey question body into a single display line."""
     lines = []
     for line in text.splitlines():
         stripped = line.strip()
@@ -313,6 +328,7 @@ def _clean_question(text: str) -> str:
 
 
 def _label_from_bracket(line: str) -> str:
+    """Create a readable field label from bracketed survey notation."""
     raw = line.strip().strip("[]")
     raw = re.sub(r",?\s*optional$", "", raw, flags=re.IGNORECASE)
     raw = re.sub(r",?\s*(short|long)\s+answer$", "", raw, flags=re.IGNORECASE)
@@ -321,6 +337,7 @@ def _label_from_bracket(line: str) -> str:
 
 
 def _make_primary_field(item: SurveyItem) -> SurveyField:
+    """Choose the primary input type for a survey item."""
     base_key = f"{item.item_id}_answer"
     field_type = item.field_type.lower()
     options = item.options
@@ -338,6 +355,7 @@ def _make_primary_field(item: SurveyItem) -> SurveyField:
 
 
 def parse_survey(path: Path) -> list[SurveyItem]:
+    """Parse the markdown QA survey into renderable survey items."""
     text = path.read_text(encoding="utf-8")
     matches = list(re.finditer(r"^###\s+(.+)$", text, re.MULTILINE))
     items: list[SurveyItem] = []
@@ -405,11 +423,13 @@ def parse_survey(path: Path) -> list[SurveyItem]:
 
 
 def build_config() -> AppConfig:
+    """Return the effective constitutional AI configuration for a run."""
     payload = _merge_nested(_default_config_payload(), _local_config_payload())
     return AppConfig.from_mapping(payload)
 
 
 def _stage_label(event: TurnEvent) -> str:
+    """Map engine events to short user-facing status labels."""
     labels = {
         "initial_started": "Writing initial draft",
         "initial_completed": "Initial draft complete",
@@ -431,6 +451,7 @@ def _stage_label(event: TurnEvent) -> str:
 
 
 def _stage_beacon(label: str) -> str:
+    """Render the compact colored status indicator."""
     state = "working"
     if label == "Ready" or label.startswith("Done"):
         state = "ready"
@@ -445,6 +466,7 @@ def _stage_beacon(label: str) -> str:
 
 
 def _chat_to_messages(chat: list[dict[str, str]]) -> list[ChatMessage]:
+    """Convert Gradio chat history into engine chat messages."""
     messages: list[ChatMessage] = []
     for entry in chat:
         role = entry.get("role")
@@ -455,6 +477,7 @@ def _chat_to_messages(chat: list[dict[str, str]]) -> list[ChatMessage]:
 
 
 def respond(user_text: str, chat: list[dict[str, str]] | None):
+    """Stream one chatbot turn and update the compact stage beacon."""
     clean_text = (user_text or "").strip()
     chat = list(chat or [])
     if not clean_text:
@@ -511,76 +534,12 @@ def respond(user_text: str, chat: list[dict[str, str]] | None):
 
 
 def clear_chat() -> tuple[list[dict[str, str]], str]:
+    """Reset the chat transcript and stage indicator."""
     return [], _stage_beacon("Ready")
 
 
-def build_survey_payload(items: list[SurveyItem], answers_by_key: dict[str, Any]) -> dict[str, Any]:
-    config = build_config()
-    questions = []
-    for item in items:
-        question_fields = []
-        for field in item.fields:
-            question_fields.append(
-                {
-                    "key": field.key,
-                    "label": field.label,
-                    "type": field.kind,
-                    "choices": field.choices,
-                    "answer": answers_by_key.get(field.key, field.default),
-                }
-            )
-        questions.append(
-            {
-                "id": item.item_id.replace("_", "."),
-                "title": item.title,
-                "field_type": item.field_type,
-                "question": item.question,
-                "fields": question_fields,
-            }
-        )
-
-    return {
-        "metadata": {
-            "saved_at": datetime.now(timezone.utc).isoformat(),
-            "survey_source": str(SURVEY_PATH),
-            "constitution_source": str(CONSTITUTION_PATH),
-            "chatbot": {
-                "mode": "parallel constitutional AI",
-                "writer_model": config.settings.writer.model,
-                "judge_model": config.settings.judge.model,
-                "parallel_max_iterations": config.settings.parallel_max_iterations,
-            },
-        },
-        "questions": questions,
-    }
-
-
-def save_form(items: list[SurveyItem], answers_json: str) -> str:
-    try:
-        answers_by_key = json.loads(answers_json or "{}")
-    except json.JSONDecodeError:
-        answers_by_key = {}
-
-    if not isinstance(answers_by_key, dict):
-        answers_by_key = {}
-
-    payload = build_survey_payload(items, answers_by_key)
-    with tempfile.NamedTemporaryFile("w", suffix=".json", prefix="constitutional_ai_qa_", delete=False, encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, ensure_ascii=False)
-        handle.write("\n")
-        return handle.name
-
-
-def make_component(field: SurveyField):
-    if field.kind == "checkboxgroup":
-        return gr.CheckboxGroup(label=field.label, choices=field.choices, value=field.default)
-    if field.kind == "radio":
-        return gr.Radio(label=field.label, choices=field.choices, value=field.default)
-    lines = 5 if field.kind == "textbox_long" else 2
-    return gr.Textbox(label=field.label, value=field.default, lines=lines)
-
-
 def _survey_notes_html(notes: list[str]) -> str:
+    """Render survey guidance notes as safe HTML snippets."""
     if not notes:
         return ""
     paragraphs = []
@@ -592,6 +551,7 @@ def _survey_notes_html(notes: list[str]) -> str:
 
 
 def _survey_field_html(field: SurveyField) -> str:
+    """Render one parsed survey field as native HTML form controls."""
     key = escape(field.key, quote=True)
     label = escape(field.label)
     if field.kind == "checkboxgroup":
@@ -641,6 +601,7 @@ def _survey_field_html(field: SurveyField) -> str:
 
 
 def build_survey_html(items: list[SurveyItem]) -> str:
+    """Render the complete scrollable survey as custom HTML."""
     cards = []
     for item in items:
         fields = "".join(_survey_field_html(field) for field in item.fields)
@@ -658,6 +619,7 @@ def build_survey_html(items: list[SurveyItem]) -> str:
 
 
 def build_survey_download_js(items: list[SurveyItem]) -> str:
+    """Build JavaScript that collects survey answers and downloads JSON."""
     config = build_config()
     payload_template = {
         "metadata": {
@@ -756,6 +718,7 @@ CLEAR_SURVEY_JS = """
 
 
 def build_app() -> gr.Blocks:
+    """Construct the Gradio UI for chat testing and survey export."""
     load_dotenv(ROOT / ".env")
     survey_items = parse_survey(SURVEY_PATH)
 

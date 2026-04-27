@@ -66,9 +66,9 @@ GRADIO_SERVER_PORT=9000 ./.venv/bin/python app.py
 ## Behavior
 
 - Left two-thirds: chatbot using `gpt-4.1-nano` as writer and judge.
-- Right one-third: survey fields parsed from `survey.md`.
+- Right one-third: scrollable HTML survey generated from `survey.md`.
 - Constitution rules come from `constitution.txt`.
 - Constitutional mode is parallel with one revision iteration.
 - Chat clearing does not reset the survey form.
 - Form clearing does not reset the chat.
-- Saving the form creates a JSON file with every survey question and field, including unanswered fields.
+- Saving the form directly downloads a JSON file with every survey question and field, including unanswered fields.
