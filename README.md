@@ -15,7 +15,7 @@ The app clones the current constitutional AI kit at runtime into `.deps/constitu
 https://github.com/arazilab/constitutional-ai-kit.git
 ```
 
-That local clone is ignored by git.
+That local clone is ignored by git. The local copy has been updated to `67dad83`, the latest `main` commit available from GitHub during this update.
 
 Create a local config file:
 
@@ -46,7 +46,8 @@ Then edit `config.json`. It can set credentials, writer and judge models, runtim
     "judge": {
       "provider": "openai",
       "model": "gpt-4.1-nano"
-    }
+    },
+    "conversation_context_messages": 10
   }
 }
 ```
@@ -119,6 +120,10 @@ Anyone with the ngrok URL can use the app while it is running, so they can indir
 - Left two-thirds: chatbot using `gpt-4.1-nano` as writer and judge.
 - Right one-third: scrollable HTML survey generated from `survey.md`.
 - Constitution rules come from `constitution.txt`.
+- Rules can start with `[message]` or `[conversation]`.
+- Message rules judge the current assistant reply.
+- Conversation rules judge recent chat context plus the current assistant reply.
+- `conversation_context_messages` controls how many recent thread messages conversation rules can inspect.
 - Constitutional mode is parallel with one revision iteration.
 - Chat clearing does not reset the survey form.
 - Form clearing does not reset the chat.

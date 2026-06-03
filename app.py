@@ -18,6 +18,7 @@ import gradio as gr
 from dotenv import load_dotenv
 
 
+sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent
 CONSTITUTION_PATH = ROOT / "constitution.txt"
 SURVEY_PATH = ROOT / "survey.md"
@@ -292,6 +293,7 @@ def _default_config_payload() -> dict[str, Any]:
             "parallel_max_iterations": 1,
             "max_iteration_ms": 0,
             "timeout_ms": 60000,
+            "conversation_context_messages": 10,
         },
         "prompts": {
             "writer_system": DEFAULT_WRITER_SYSTEM_PROMPT,
@@ -309,6 +311,13 @@ def _local_config_payload() -> dict[str, Any]:
             credentials = settings.setdefault("credentials", {})
             if isinstance(credentials, dict):
                 credentials.setdefault("openai_api_key", legacy_key)
+
+    prompts = payload.get("prompts")
+    if isinstance(prompts, dict):
+        for key in ("judge_pass_system", "judge_critique_system"):
+            value = str(prompts.get(key, "") or "").lower()
+            if key in prompts and "rule level" not in value:
+                prompts.pop(key)
     return payload
 
 
