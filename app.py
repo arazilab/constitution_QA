@@ -88,6 +88,10 @@ APP_CSS = """
     flex-wrap: wrap;
     gap: 8px;
 }
+.survey-choice-list:has(input[type="radio"]) {
+    flex-direction: column;
+    align-items: stretch;
+}
 .survey-choice {
     display: inline-flex;
     align-items: center;
@@ -96,6 +100,9 @@ APP_CSS = """
     border-radius: 6px;
     padding: 8px 10px;
     background: #ffffff;
+}
+.survey-choice-list:has(input[type="radio"]) .survey-choice {
+    width: 100%;
 }
 .survey-text-input {
     width: 100%;
@@ -158,15 +165,20 @@ def ensure_constitutional_ai_kit() -> None:
     KIT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     if not KIT_PATH.exists():
-        subprocess.run(["git", "clone", "--depth", "1", KIT_REPO_URL, str(KIT_PATH)], check=True)
+        subprocess.run(["git", "clone", "--depth", "1", KIT_REPO_URL, str(KIT_PATH)], check=True, timeout=30)
     else:
-        pull = subprocess.run(
-            ["git", "-C", str(KIT_PATH), "pull", "--ff-only"],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        if pull.returncode != 0:
+        try:
+            pull = subprocess.run(
+                ["git", "-C", str(KIT_PATH), "pull", "--ff-only"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            update_failed = pull.returncode != 0
+        except subprocess.TimeoutExpired:
+            update_failed = True
+        if update_failed:
             print("Warning: could not update .deps/constitutional-ai-kit; using the existing local copy.", file=sys.stderr)
 
     src_path = str(KIT_SRC_PATH)
