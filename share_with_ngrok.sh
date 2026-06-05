@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-PORT="${GRADIO_SERVER_PORT:-7860}"
+REQUESTED_PORT="${GRADIO_SERVER_PORT:-}"
+PORT="${REQUESTED_PORT:-7860}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENV_DIR="$ROOT_DIR/.venv"
 DEPS_DIR="$ROOT_DIR/.deps"
@@ -87,6 +88,49 @@ wait_for_app() {
   done
 
   echo "Gradio did not become ready. See $APP_LOG" >&2
+  exit 1
+}
+
+port_is_free() {
+  "$VENV_DIR/bin/python" - "$1" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", port))
+    except OSError:
+        raise SystemExit(1)
+PY
+}
+
+choose_port() {
+  local candidate
+
+  if [[ -n "$REQUESTED_PORT" ]]; then
+    if port_is_free "$PORT"; then
+      return
+    fi
+    echo "Port $PORT is already in use." >&2
+    echo "Stop the process using it, or run with a different port." >&2
+    echo "Example: GRADIO_SERVER_PORT=9000 ./share_with_ngrok.sh" >&2
+    exit 1
+  fi
+
+  for candidate in $(seq "$PORT" "$((PORT + 100))"); do
+    if port_is_free "$candidate"; then
+      if [[ "$candidate" != "$PORT" ]]; then
+        echo "Port $PORT is busy. Using port $candidate instead."
+      fi
+      PORT="$candidate"
+      return
+    fi
+  done
+
+  echo "No free port found from $PORT to $((PORT + 100))." >&2
+  echo "Stop an old Gradio process, or set GRADIO_SERVER_PORT." >&2
   exit 1
 }
 
@@ -195,6 +239,7 @@ fi
 echo "Installing Python requirements ..."
 "$VENV_DIR/bin/pip" install -qqq -r requirements.txt
 
+choose_port
 install_ngrok_if_needed
 
 NGROK_AUTH_TOKEN="${NGROK_AUTHTOKEN:-}"
@@ -207,6 +252,8 @@ if [[ -n "$NGROK_AUTH_TOKEN" ]]; then
 fi
 
 echo "Starting Gradio app on port $PORT ..."
+: >"$APP_LOG"
+: >"$NGROK_LOG"
 GRADIO_SERVER_PORT="$PORT" GRADIO_SHARE=0 "$VENV_DIR/bin/python" app.py >"$APP_LOG" 2>&1 &
 APP_PID="$!"
 
