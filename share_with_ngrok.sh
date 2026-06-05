@@ -127,6 +127,31 @@ PY
   exit 1
 }
 
+process_is_running() {
+  local pid state
+  pid="$1"
+  state="$(ps -p "$pid" -o state= 2>/dev/null || true)"
+  [[ -n "$state" && "$state" != Z ]]
+}
+
+wait_for_processes() {
+  while true; do
+    if ! process_is_running "$APP_PID"; then
+      echo "Gradio stopped unexpectedly. Last log lines:" >&2
+      tail -n 40 "$APP_LOG" >&2 || true
+      exit 1
+    fi
+
+    if ! process_is_running "$NGROK_PID"; then
+      echo "ngrok stopped unexpectedly. Last log lines:" >&2
+      tail -n 40 "$NGROK_LOG" >&2 || true
+      exit 1
+    fi
+
+    sleep 2
+  done
+}
+
 config_ngrok_auth_token() {
   "$VENV_DIR/bin/python" - <<'PY'
 import json
@@ -168,7 +193,7 @@ if [[ ! -d "$VENV_DIR" ]]; then
 fi
 
 echo "Installing Python requirements ..."
-"$VENV_DIR/bin/pip" install -r requirements.txt
+"$VENV_DIR/bin/pip" install -qqq -r requirements.txt
 
 install_ngrok_if_needed
 
@@ -193,4 +218,4 @@ NGROK_PID="$!"
 
 wait_for_ngrok_url
 
-wait "$APP_PID"
+wait_for_processes
